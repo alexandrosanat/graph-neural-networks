@@ -1,12 +1,13 @@
 from collections import namedtuple
 from networkx import read_edgelist, set_node_attributes, to_numpy_matrix
-from pandas import read_csv, Series
+import pandas as pd
 from numpy import array
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import numpy as np
+
 
 DataSet = namedtuple(
     'DataSet',
@@ -19,14 +20,14 @@ def load_karate_club():
         'data/zkc.edgelist',
         nodetype=int)
 
-    attributes = read_csv(
+    attributes = pd.read_csv(
         'data/features.csv',
         index_col=['node'])
 
     for attribute in attributes.columns.values:
         set_node_attributes(
             network,
-            values=Series(
+            values=pd.Series(
                 attributes[attribute],
                 index=attributes.index).to_dict(),
             name=attribute
@@ -51,14 +52,9 @@ def load_karate_club():
 
 
 class SpektralRule(nn.Module):
-
     def __init__(self, A, input_units, output_units, activation='tanh'):
         super(SpektralRule, self).__init__()
-        # self.input_units = input_units
-        # self.output_units = output_units
-
         self.linear_layer = nn.Linear(input_units, output_units)  # Define a linear layer
-
         nn.init.xavier_normal_(self.linear_layer.weight)
 
         if activation == 'relu':
@@ -68,31 +64,24 @@ class SpektralRule(nn.Module):
         else:
             self.activation = nn.Identity()
 
-        # Create identity matrix
-        I = torch.eye(A.shape[1])
-        # Adding self loops to the adjacency matrix
-        A_hat = A + I
+        I = torch.eye(A.shape[1])  # Create identity matrix
+        A_hat = A + I  # Adding self loops to the adjacency matrix
         A_hat = A_hat.to(torch.double)
-        # Inverse degree Matrix
-        D = torch.diag(torch.pow(torch.sum(A_hat, dim=0), -0.5), 0)
-        # applying spectral rule
-        self.A_hat = torch.matmul(torch.matmul(D, A_hat), D)
+        D = torch.diag(torch.pow(torch.sum(A_hat, dim=0), -0.5), 0)  # Inverse degree Matrix
+        self.A_hat = torch.matmul(torch.matmul(D, A_hat), D)  # Applying spectral rule
         self.A_hat.requires_grad = False  # Non trainable parameter
 
     def forward(self, X):
-        # aggregation
         aggregation = torch.matmul(self.A_hat, X)
-        # propagation through the linear layer that will have the number of hidden nodes specified
+        # Propagation through the linear layer that will have the number of hidden nodes specified
         linear_output = self.linear_layer(aggregation.to(torch.float))
         propagation = self.activation(linear_output)
 
         return propagation.to(torch.double)
 
 
-
-
-
 class FeatureModel(nn.Module):
+    """Class is used to apply the spektral rule and calculate the convolutions."""
     def __init__(self, A, hidden_layer_config, initial_input_size):
         super(FeatureModel, self).__init__()
         # self.hidden_layer_config = hidden_layer_config
@@ -109,8 +98,8 @@ class FeatureModel(nn.Module):
         self.sequentialModule = nn.Sequential(*self.moduleList)
 
     def forward(self, X):
-        output = self.sequentialModule(X)  # Apply the sequential model
-        return output
+        feature_output = self.sequentialModule(X)  # Apply the sequential model
+        return feature_output
 
 
 class LogisticRegressor(nn.Module):
@@ -157,29 +146,33 @@ class HybridModel(nn.Module):
         return classified
 
 
-def train(model, epoch, criterion, optimizer, feature):
+def train(model, epochs, criterion, optimizer, features):
+    """Used to train the model."""
     cumLoss = 0
     losses = list()
 
-    for j in range(epoch):
+    for j in range(epochs):
         two_loss = 0
         for i, node in enumerate(X_train_flattened):
-            output = model(feature)[node]
-
+            # Forward pass - get prediction for relevant node only
+            output = model(features)[node]
+            # Get the label for the node
             ground_truth = torch.reshape(y_train[i], output.shape)
-
+            # For every mini-batch during training we need to explicitly set the gradients to zero
+            # before backpropagation because PyTorch accumulates gradients on subsequent backward passes
             optimizer.zero_grad()
-
+            # Calculate loss
             loss = criterion(output, ground_truth)
-            # \print("loss: ",loss.data)
+            # print("loss: ", loss.data)
             two_loss += loss.item()
-
+            # Backpropagation
             loss.backward()
-
+            # Perform parameter update based on the current gradient
             optimizer.step()
         losses.append(two_loss)
         cumLoss += two_loss
-    print('avg loss: ', cumLoss / epoch)
+    print('avg loss: ', cumLoss / epochs)
+    # Save model
     torch.save(model.state_dict(), "./gcn.pth")
     plt.plot(losses)
 
@@ -205,7 +198,6 @@ if __name__ == '__main__':
     output_nodes = 1  # We're only trying to predict between 2 classes
 
     model = HybridModel(A, hidden_layer_config, identity.shape[1], output_nodes)
-
     output = model(identity)
 
     # print(zkc.y_test)
@@ -213,6 +205,6 @@ if __name__ == '__main__':
 
     criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    featureoutput = None
+    # featureoutput = None
 
     train(model, 10000, criterion, optimizer, identity)
