@@ -53,14 +53,11 @@ def load_karate_club():
 class SpektralRule(nn.Module):
 
     def __init__(self, A, input_units, output_units, activation='tanh'):
-
         super(SpektralRule, self).__init__()
+        # self.input_units = input_units
+        # self.output_units = output_units
 
-        self.input_units = input_units
-        self.output_units = output_units
-
-        # Define a linear layer
-        self.linear_layer = nn.Linear(self.input_units, self.output_units)
+        self.linear_layer = nn.Linear(input_units, output_units)  # Define a linear layer
 
         nn.init.xavier_normal_(self.linear_layer.weight)
 
@@ -98,19 +95,21 @@ class SpektralRule(nn.Module):
 class FeatureModel(nn.Module):
     def __init__(self, A, hidden_layer_config, initial_input_size):
         super(FeatureModel, self).__init__()
-
-        self.hidden_layer_config = hidden_layer_config
-        self.moduleList = list()
-        self.initial_input_size = initial_input_size
+        # self.hidden_layer_config = hidden_layer_config
+        self.moduleList = list()  # List to keep track of convolutional layers
+        self.initial_input_size = initial_input_size  # Define this here so it can be changed downstream
 
         for input_size, activation in hidden_layer_config:
+            # Define the requested number of convolutions
             self.moduleList.append(SpektralRule(A, self.initial_input_size, input_size, activation))
+            # Change the input size to the previous layer's input size for the next iteration
             self.initial_input_size = input_size
 
+        # Create a sequential model from the input hidden layer configuration
         self.sequentialModule = nn.Sequential(*self.moduleList)
 
     def forward(self, X):
-        output = self.sequentialModule(X)
+        output = self.sequentialModule(X)  # Apply the sequential model
         return output
 
 
@@ -131,11 +130,11 @@ class ClassifierModel(nn.Module):
     """Class serves as factory for the last node classification layer."""
     def __init__(self, input_size, output_size):
         super(ClassifierModel, self).__init__()
-        self.logisticRegressor = LogisticRegressor(input_units=input_size,
-                                                   output_units=output_size)
+        self.classifier = LogisticRegressor(input_units=input_size,
+                                            output_units=output_size)
 
     def forward(self, X):
-        classified = self.logisticRegressor(X)
+        classified = self.classifier(X)
         return classified
 
 
@@ -145,7 +144,8 @@ class HybridModel(nn.Module):
     """
     def __init__(self, A, hidden_layer_config, initial_input_size, output_nodes):
         super(HybridModel, self).__init__()
-        self.featureModel = FeatureModel(A, hidden_layer_config, identity.shape[1])
+        self.featureModel = FeatureModel(A, hidden_layer_config, initial_input_size)
+        # This parameter will be updated with the last layer's input size
         self.featureModelOutputSize = self.featureModel.initial_input_size
         self.classifier = ClassifierModel(self.featureModelOutputSize, output_nodes)
         self.featureModelOutput = None
