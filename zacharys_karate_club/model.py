@@ -177,6 +177,20 @@ def train(model, epochs, criterion, optimizer, features):
     plt.plot(losses)
 
 
+def test(model, features, X_test_flattened):
+    # model = HybridModel(A, hidden_layer_config, identity.shape[1])
+    # model.load_state_dict(torch.load("./gcn.pth"))
+    model.eval()
+    correct = 0
+    masked_output = list()
+    for i, node in enumerate(X_test_flattened):
+        output = model(features)[node]
+        masked_output.append(output.ge(0.5))
+
+    return masked_output
+
+
+
 if __name__ == '__main__':
 
     # Load data
@@ -208,3 +222,35 @@ if __name__ == '__main__':
     # featureoutput = None
 
     train(model, 10000, criterion, optimizer, identity)
+
+    after = None
+    masked = test(model, identity, X_test_flattened)
+    masked = [i.item() for i in masked]
+    print(masked)
+
+    test_gt = torch.from_numpy(zkc.y_test)
+    test_gt = [i.item() for i in test_gt]
+
+    counter = 0
+    tp = 0
+    fp = 0
+    fn = 0
+    tn = 0
+
+    correct = zip(masked, test_gt)
+    for (masked, gt) in list(correct):
+        if masked == gt and masked is True:
+            tp += 1
+        if masked == gt and masked is False:
+            tn += 1
+        if masked is False and gt is True:
+            fn += 1
+        if masked is True and gt is False:
+            fp += 1
+
+    accuracy = (tp + tn) / (tp+fp+fn+tn)
+    precision = tp/(tp+fp)
+    recall = tp/(tp+fn)
+    print('accuracy ', accuracy)
+    print('precision ', precision)
+    print('recall ', recall)
