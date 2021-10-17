@@ -1,4 +1,6 @@
 from collections import namedtuple
+
+import networkx as nx
 from networkx import read_edgelist, set_node_attributes, to_numpy_matrix
 import pandas as pd
 from numpy import array
@@ -52,6 +54,7 @@ def load_karate_club():
 
 
 class SpektralRule(nn.Module):
+    """Applies the spektral rule to the Adjacency matrix"""
     def __init__(self, A, input_units, output_units, activation='tanh'):
         super(SpektralRule, self).__init__()
         self.linear_layer = nn.Linear(input_units, output_units)  # Define a linear layer
@@ -64,6 +67,7 @@ class SpektralRule(nn.Module):
         else:
             self.activation = nn.Identity()
 
+        # This is a on-off calculation
         I = torch.eye(A.shape[1])  # Create identity matrix
         A_hat = A + I  # Adding self loops to the adjacency matrix
         A_hat = A_hat.to(torch.double)
@@ -190,7 +194,6 @@ def test(model, features, X_test_flattened):
     return masked_output
 
 
-
 if __name__ == '__main__':
 
     # Load data
@@ -206,13 +209,25 @@ if __name__ == '__main__':
     identity = identity.to(torch.double)
     identity.requires_grad = False
 
+    # Use node distances as features additional to the identity matrix
+    X_2 = np.zeros((A.shape[0], 2))
+    node_distance_instructor = nx.shortest_path_length(zkc.network, target=33)
+    node_distance_administrator = nx.shortest_path_length(zkc.network, target=0)
+
+    for node in zkc.network.nodes():
+        X_2[node][0] = node_distance_administrator[node]
+        X_2[node][1] = node_distance_instructor[node]
+
+    X_2 = torch.cat((identity, torch.from_numpy(X_2)), 1)
+    X_2.requires_grad = False
+
     # Model configuration
     hidden_layer_config = [(4, 'tanh'),
                            (2, 'tanh')]
     output_nodes = 1  # We're only trying to predict between 2 classes
 
-    model = HybridModel(A, hidden_layer_config, identity.shape[1], output_nodes)
-    output = model(identity)
+    model = HybridModel(A, hidden_layer_config, X_2.shape[1], output_nodes)
+    output = model(X_2)
 
     # print(zkc.y_test)
     # print(output)
@@ -221,10 +236,10 @@ if __name__ == '__main__':
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     # featureoutput = None
 
-    train(model, 10000, criterion, optimizer, identity)
+    train(model, 10000, criterion, optimizer, X_2)
 
     after = None
-    masked = test(model, identity, X_test_flattened)
+    masked = test(model, X_2, X_test_flattened)
     masked = [i.item() for i in masked]
     print(masked)
 
